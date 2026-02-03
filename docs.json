@@ -24,7 +24,8 @@
             "group": "Core concepts",
             "pages": [
               "architecture",
-              "deployment"
+              "deployment",
+              "upstreams"
             ]
           },
           {
