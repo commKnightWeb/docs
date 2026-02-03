@@ -1,0 +1,121 @@
+---
+title: Introduction
+description: Multi-tenant CDN management platform built on Caddy Server
+---
+
+# CDN Manager
+
+CDN Manager is a **multi-tenant CDN management platform** that enables organizations to manage fleets of Caddy servers and offer CDN services to their customers. The platform provides centralized configuration management, real-time monitoring, bandwidth quota enforcement, and automated server provisioning.
+
+## What is CDN Manager?
+
+CDN Manager acts as a control plane for Caddy Server deployments, allowing you to:
+
+- **Manage multiple tenants** - Each tenant operates independently with their own servers and customers
+- **Deploy CDN services** - Configure reverse proxies, SSL/TLS, load balancing, and caching
+- **Monitor performance** - Track bandwidth usage, server health, and access logs
+- **Automate operations** - Install Caddy servers remotely, deploy configurations, and manage certificates
+
+## Key features
+
+### Multi-tenancy
+
+Three-tier user hierarchy provides complete isolation:
+
+- **Super Admin** - Manages tenants and system settings
+- **Tenant Admin** - Manages server infrastructure and companies
+- **Company Admin** - Manages CDN services and deployments
+
+### Server pool architecture
+
+Separate test and production environments:
+
+- **Test pools** - Pre-production testing with auto-generated test domains
+- **Production pools** - Live traffic with custom domains
+- **Flexible assignment** - Each company can use different pools
+
+### Configuration management
+
+Version-controlled deployments with immutable snapshots:
+
+- **Service versions** - Track every configuration change
+- **Config snapshots** - Immutable records of deployed state
+- **Change detection** - See exactly what changed between versions
+- **Rollback support** - Revert to previous configurations
+
+### Domain registry
+
+Centralized domain management with LIVE operations:
+
+- **Source of truth** - Single registry for all domain state
+- **Per-domain SSL** - Configure SSL independently per domain
+- **LIVE add/remove** - Update domains without full redeployment
+- **Health tracking** - Monitor DNS, certificates, and availability
+
+### SSL/TLS automation
+
+Flexible certificate management:
+
+- **Automatic ACME** - Let's Encrypt, ZeroSSL, or Buypass
+- **Custom certificates** - Upload your own certificates
+- **On-demand TLS** - Issue certificates on first request
+- **Per-domain control** - Different SSL modes per domain
+
+### Authentication & authorization
+
+Multiple authentication methods:
+
+- **Basic auth** - Username/password authentication
+- **API keys** - Token-based access control
+- **JWT validation** - Integrate with identity providers
+- **Forward auth** - Delegate to external auth services
+
+### Load balancing
+
+Advanced upstream configuration:
+
+- **Multiple targets** - Distribute traffic across backends
+- **LB policies** - Round robin, least connections, IP hash, and more
+- **Health checks** - Active and passive health monitoring
+- **Session affinity** - Sticky sessions via cookies or headers
+
+### Real-time operations
+
+Live updates and monitoring:
+
+- **WebSocket streaming** - Real-time installation progress
+- **Background jobs** - Async processing with BullMQ
+- **Cascading changes** - Auto-deploy when shared resources change
+- **Heartbeat monitoring** - Track server health
+
+## Architecture overview
+
+CDN Manager is built as a modular monolith with the following components:
+
+- **Backend API** - Node.js, Fastify, Prisma (PostgreSQL)
+- **Frontend** - React 18, Vite, Tailwind CSS
+- **Worker** - BullMQ for background jobs
+- **Redis** - Cache, job queue, and pub/sub
+- **Caddy Server** - Reverse proxy and CDN backend
+
+## Use cases
+
+### CDN service provider
+
+Offer CDN services to multiple customers with isolated configurations and billing.
+
+### Multi-region deployment
+
+Manage Caddy servers across different geographic regions with centralized control.
+
+### Development & staging
+
+Separate test and production environments with auto-generated test domains.
+
+### Enterprise CDN
+
+Internal CDN platform for large organizations with multiple business units.
+
+## Getting started
+
+Ready to get started? Check out the [quickstart guide](/quickstart) to set up your first CDN service.
