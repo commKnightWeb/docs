@@ -1,0 +1,549 @@
+---
+title: API reference
+description: REST API endpoints and authentication
+---
+
+# API reference
+
+CDN Manager provides a REST API with role-based access control. All endpoints are prefixed with `/v1`.
+
+## Authentication
+
+### Login
+
+Authenticate and receive JWT tokens.
+
+```http
+POST /v1/auth/login
+Content-Type: application/json
+
+{
+  "email": "admin@example.com",
+  "password": "password123",
+  "userType": "super_admin" | "tenant_admin" | "company_admin"
+}
+```
+
+**Response**:
+```json
+{
+  "accessToken": "eyJhbGciOiJIUzI1NiIs...",
+  "refreshToken": "550e8400-e29b-41d4-a716-446655440000",
+  "user": {
+    "id": "uuid",
+    "email": "admin@example.com",
+    "name": "Admin User",
+    "role": "super_admin"
+  }
+}
+```
+
+### Refresh token
+
+Obtain a new access token using a refresh token.
+
+```http
+POST /v1/auth/refresh
+Content-Type: application/json
+
+{
+  "refreshToken": "550e8400-e29b-41d4-a716-446655440000"
+}
+```
+
+### Logout
+
+Revoke the current refresh token.
+
+```http
+POST /v1/auth/logout
+Authorization: Bearer {accessToken}
+Content-Type: application/json
+
+{
+  "refreshToken": "550e8400-e29b-41d4-a716-446655440000"
+}
+```
+
+## Authorization
+
+Include the access token in the `Authorization` header:
+
+```http
+Authorization: Bearer eyJhbGciOiJIUzI1NiIs...
+```
+
+## Super admin endpoints
+
+### Tenants
+
+#### List tenants
+
+```http
+GET /v1/admin/tenants
+```
+
+#### Create tenant
+
+```http
+POST /v1/admin/tenants
+Content-Type: application/json
+
+{
+  "name": "My CDN Company",
+  "slug": "my-cdn",
+  "testDomainBase": "test.mycdn.io",
+  "maxCompanies": 100,
+  "maxServices": 1000
+}
+```
+
+#### Update tenant
+
+```http
+PATCH /v1/admin/tenants/:id
+Content-Type: application/json
+
+{
+  "name": "Updated Name",
+  "isActive": true
+}
+```
+
+#### Delete tenant
+
+```http
+DELETE /v1/admin/tenants/:id
+```
+
+### System settings
+
+#### Get settings
+
+```http
+GET /v1/admin/settings
+```
+
+#### Update settings
+
+```http
+PATCH /v1/admin/settings
+Content-Type: application/json
+
+{
+  "caddyDockerImage": "caddy:2.7-alpine",
+  "caddyRunCommand": "caddy run --config /etc/caddy/Caddyfile"
+}
+```
+
+## Tenant admin endpoints
+
+### Companies
+
+#### List companies
+
+```http
+GET /v1/tenant/companies
+```
+
+#### Create company
+
+```http
+POST /v1/tenant/companies
+Content-Type: application/json
+
+{
+  "name": "Acme Corp",
+  "slug": "acme",
+  "serverPoolId": "uuid",
+  "maxServices": 50,
+  "bandwidthLimitGb": 1000
+}
+```
+
+### Server pools
+
+#### List pools
+
+```http
+GET /v1/tenant/server-pools
+```
+
+#### Create pool
+
+```http
+POST /v1/tenant/server-pools
+Content-Type: application/json
+
+{
+  "name": "Test Pool",
+  "slug": "test",
+  "isTestPool": true,
+  "description": "Pre-production testing"
+}
+```
+
+### Caddy servers
+
+#### List servers
+
+```http
+GET /v1/tenant/servers
+```
+
+#### Create server
+
+```http
+POST /v1/tenant/servers
+Content-Type: application/json
+
+{
+  "name": "Caddy Test 1",
+  "ipAddress": "192.168.1.100",
+  "adminPort": 2019,
+  "serverPoolId": "uuid",
+  "sshPort": 22,
+  "sshUser": "root"
+}
+```
+
+#### Install Caddy
+
+```http
+POST /v1/tenant/servers/:id/install
+Content-Type: application/json
+
+{
+  "sshPublicKey": "ssh-ed25519 AAAA..."
+}
+```
+
+#### Resync pool
+
+Push deployed configs to all servers in a pool.
+
+```http
+POST /v1/tenant/server-pools/:id/resync
+```
+
+## Company admin endpoints
+
+### Services
+
+#### List services
+
+```http
+GET /v1/company/services
+```
+
+#### Create service
+
+```http
+POST /v1/company/services
+Content-Type: application/json
+
+{
+  "name": "My Website",
+  "domains": ["www.example.com"],
+  "sslMode": "auto",
+  "compressionEnabled": true,
+  "cacheEnabled": true
+}
+```
+
+#### Get service
+
+```http
+GET /v1/company/services/:id
+```
+
+#### Update service
+
+```http
+PATCH /v1/company/services/:id
+Content-Type: application/json
+
+{
+  "name": "Updated Name",
+  "sslMode": "custom"
+}
+```
+
+#### Delete service
+
+```http
+DELETE /v1/company/services/:id
+```
+
+### Routes
+
+#### List routes
+
+```http
+GET /v1/company/services/:serviceId/routes
+```
+
+#### Create route
+
+```http
+POST /v1/company/services/:serviceId/routes
+Content-Type: application/json
+
+{
+  "pathMatcher": "/*",
+  "handlerType": "reverse_proxy",
+  "handlerConfig": {
+    "upstreamType": "upstream",
+    "upstreamId": "uuid"
+  },
+  "sortOrder": 0
+}
+```
+
+#### Update route
+
+```http
+PATCH /v1/company/routes/:id
+Content-Type: application/json
+
+{
+  "pathMatcher": "/api/*",
+  "rateLimitEnabled": true,
+  "rateLimitRequests": 100,
+  "rateLimitWindowMs": 60000
+}
+```
+
+#### Delete route
+
+```http
+DELETE /v1/company/routes/:id
+```
+
+### Upstreams
+
+#### List upstreams
+
+```http
+GET /v1/company/upstreams
+```
+
+#### Create upstream
+
+```http
+POST /v1/company/upstreams
+Content-Type: application/json
+
+{
+  "name": "My Backend",
+  "lbPolicy": "round_robin",
+  "healthCheckEnabled": true,
+  "healthCheckPath": "/health",
+  "targets": [
+    { "address": "backend1:8080", "weight": 1 },
+    { "address": "backend2:8080", "weight": 1 }
+  ]
+}
+```
+
+#### Update upstream
+
+```http
+PATCH /v1/company/upstreams/:id
+Content-Type: application/json
+
+{
+  "lbPolicy": "least_conn",
+  "maxFails": 3
+}
+```
+
+### Deployments
+
+#### Deploy to test
+
+```http
+POST /v1/company/services/:id/deploy/test
+Content-Type: application/json
+
+{
+  "changeSummary": "Added new route for API"
+}
+```
+
+#### Promote to production
+
+```http
+POST /v1/company/services/:id/deploy/production
+Content-Type: application/json
+
+{
+  "changeSummary": "Promoting tested changes"
+}
+```
+
+#### List versions
+
+```http
+GET /v1/company/services/:id/versions
+```
+
+#### Get version diff
+
+```http
+GET /v1/company/services/:id/versions/:versionId/diff
+```
+
+### Domains
+
+#### Add domain
+
+```http
+POST /v1/company/services/:id/domains
+Content-Type: application/json
+
+{
+  "domain": "api.example.com",
+  "sslMode": "auto"
+}
+```
+
+#### Update domain SSL
+
+```http
+PATCH /v1/company/domains/:id
+Content-Type: application/json
+
+{
+  "sslMode": "custom",
+  "certificateId": "uuid"
+}
+```
+
+#### Remove domain
+
+```http
+DELETE /v1/company/domains/:id
+```
+
+### Certificates
+
+#### List certificates
+
+```http
+GET /v1/company/certificates
+```
+
+#### Upload certificate
+
+```http
+POST /v1/company/certificates
+Content-Type: application/json
+
+{
+  "name": "My Certificate",
+  "certPem": "-----BEGIN CERTIFICATE-----\n...",
+  "chainPem": "-----BEGIN CERTIFICATE-----\n...",
+  "keyPem": "-----BEGIN PRIVATE KEY-----\n..."
+}
+```
+
+## WebSocket endpoints
+
+### Installation progress
+
+Real-time Caddy installation progress.
+
+```javascript
+const ws = new WebSocket(
+  `ws://localhost:3000/ws/installation/${serverId}?token=${accessToken}`
+);
+
+ws.onmessage = (event) => {
+  const data = JSON.parse(event.data);
+  console.log(data.progress, data.currentStep);
+};
+```
+
+## Error responses
+
+All errors follow this format:
+
+```json
+{
+  "error": {
+    "code": "VALIDATION_ERROR",
+    "message": "Invalid request data",
+    "details": [
+      {
+        "field": "email",
+        "message": "Invalid email format"
+      }
+    ]
+  }
+}
+```
+
+### Error codes
+
+| Code | HTTP Status | Description |
+|------|-------------|-------------|
+| `VALIDATION_ERROR` | 400 | Invalid request data |
+| `UNAUTHORIZED` | 401 | Missing or invalid token |
+| `FORBIDDEN` | 403 | Insufficient permissions |
+| `NOT_FOUND` | 404 | Resource not found |
+| `CONFLICT` | 409 | Resource already exists |
+| `RATE_LIMIT` | 429 | Too many requests |
+| `INTERNAL_ERROR` | 500 | Server error |
+
+## Rate limiting
+
+API endpoints are rate-limited per user:
+
+- **Default**: 100 requests per minute
+- **Deployment**: 10 requests per minute
+- **Authentication**: 5 requests per minute
+
+Rate limit headers:
+```http
+X-RateLimit-Limit: 100
+X-RateLimit-Remaining: 95
+X-RateLimit-Reset: 1640000000
+```
+
+## Pagination
+
+List endpoints support pagination:
+
+```http
+GET /v1/company/services?page=1&limit=20
+```
+
+**Response**:
+```json
+{
+  "data": [...],
+  "pagination": {
+    "page": 1,
+    "limit": 20,
+    "total": 150,
+    "pages": 8
+  }
+}
+```
+
+## Filtering
+
+Filter by fields using query parameters:
+
+```http
+GET /v1/company/services?isActive=true&sslMode=auto
+```
+
+## Sorting
+
+Sort by fields using `sortBy` and `sortOrder`:
+
+```http
+GET /v1/company/services?sortBy=createdAt&sortOrder=desc
+```
