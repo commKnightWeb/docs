@@ -72,12 +72,15 @@ Multiple authentication methods:
 
 ### Load balancing
 
-Advanced upstream configuration:
+Advanced upstream configuration with multi-target support:
 
-- **Multiple targets** - Distribute traffic across backends
-- **LB policies** - Round robin, least connections, IP hash, and more
-- **Health checks** - Active and passive health monitoring
-- **Session affinity** - Sticky sessions via cookies or headers
+- **Multiple targets** - Distribute traffic across backend servers with individual weights
+- **LB policies** - Round robin, least connections, IP hash, random, first, cookie, and header-based
+- **Active health checks** - HTTP/HTTPS/TCP probes with configurable intervals and timeouts
+- **Passive failure detection** - Automatic isolation based on maxFails, failDuration, and unhealthy latency
+- **Retry configuration** - Control retry attempts, duration, and intervals for failed requests
+- **Session affinity** - Sticky sessions via cookies, headers, or client IP
+- **Service defaults** - Define default upstreams that routes can inherit
 
 ### Real-time operations
 

@@ -1,0 +1,660 @@
+---
+title: Upstreams
+description: Configure multi-target load balancing with health checks and session affinity
+---
+
+Upstreams define backend server pools with advanced load balancing, health monitoring, and failover capabilities. Each upstream can have multiple targets with individual weights, automatic health checks, and configurable retry behavior.
+
+## Overview
+
+An upstream represents a pool of backend servers that handle requests. Key features include:
+
+- **Multi-target support** - Distribute traffic across multiple backend servers
+- **Load balancing policies** - Choose from 7 different distribution strategies
+- **Active health checks** - Proactively monitor backend availability
+- **Passive failure detection** - Automatically detect and isolate unhealthy backends
+- **Retry configuration** - Control retry behavior for failed requests
+- **Session affinity** - Maintain sticky sessions via cookies or headers
+
+## Creating an upstream
+
+Create an upstream with at least one target:
+
+```bash
+POST /v1/company/upstreams
+Content-Type: application/json
+
+{
+  "name": "My Backend Pool",
+  "targets": [
+    { "address": "backend1.example.com:8080", "weight": 1 },
+    { "address": "backend2.example.com:8080", "weight": 1 }
+  ],
+  "lbPolicy": "round_robin",
+  "healthCheckEnabled": true,
+  "healthCheckPath": "/health"
+}
+```
+
+## Multi-target configuration
+
+### Adding targets
+
+Each upstream can have multiple backend targets. Targets are defined with:
+
+- **address** - Host and port (e.g., `backend1:8080`)
+- **weight** - Relative weight for load distribution (1-100)
+- **isActive** - Enable or disable individual targets
+
+```bash
+POST /v1/company/upstreams/:upstreamId/targets
+Content-Type: application/json
+
+{
+  "address": "backend3.example.com:8080",
+  "weight": 2
+}
+```
+
+### Target weights
+
+Weights control traffic distribution. A target with weight 2 receives twice as much traffic as a target with weight 1:
+
+```json
+{
+  "targets": [
+    { "address": "backend1:8080", "weight": 1 },
+    { "address": "backend2:8080", "weight": 2 },
+    { "address": "backend3:8080", "weight": 1 }
+  ]
+}
+```
+
+In this example, backend2 receives 50% of traffic, while backend1 and backend3 each receive 25%.
+
+### Managing targets
+
+Update target configuration:
+
+```bash
+PATCH /v1/company/upstreams/:upstreamId/targets/:targetId
+Content-Type: application/json
+
+{
+  "weight": 3,
+  "isActive": true
+}
+```
+
+Remove a target:
+
+```bash
+DELETE /v1/company/upstreams/:upstreamId/targets/:targetId
+```
+
+Reorder targets:
+
+```bash
+PUT /v1/company/upstreams/:upstreamId/targets/reorder
+Content-Type: application/json
+
+{
+  "targetIds": ["target-id-1", "target-id-2", "target-id-3"]
+}
+```
+
+## Load balancing policies
+
+Choose how traffic is distributed across targets:
+
+### Round robin (default)
+
+Distributes requests evenly across all targets in rotation.
+
+```json
+{
+  "lbPolicy": "round_robin"
+}
+```
+
+**Use when:** All backends have similar capacity and you want even distribution.
+
+### Least connections
+
+Routes requests to the target with the fewest active connections.
+
+```json
+{
+  "lbPolicy": "least_conn"
+}
+```
+
+**Use when:** Request processing time varies significantly, or backends have different capacities.
+
+### IP hash
+
+Routes requests from the same client IP to the same target (sticky sessions).
+
+```json
+{
+  "lbPolicy": "ip_hash"
+}
+```
+
+**Use when:** You need session persistence based on client IP.
+
+### Random
+
+Randomly selects a target for each request.
+
+```json
+{
+  "lbPolicy": "random"
+}
+```
+
+**Use when:** You want simple distribution without tracking state.
+
+### First available
+
+Always routes to the first available target, using others only as fallback.
+
+```json
+{
+  "lbPolicy": "first"
+}
+```
+
+**Use when:** You have a primary backend with failover secondaries.
+
+### Cookie-based affinity
+
+Routes requests with the same cookie value to the same target.
+
+```json
+{
+  "lbPolicy": "cookie",
+  "affinityType": "cookie",
+  "affinityKey": "session_id",
+  "affinityTtlSeconds": 3600
+}
+```
+
+**Use when:** You need session persistence based on application cookies.
+
+### Header-based affinity
+
+Routes requests with the same header value to the same target.
+
+```json
+{
+  "lbPolicy": "header",
+  "affinityType": "header",
+  "affinityKey": "X-User-ID"
+}
+```
+
+**Use when:** You need session persistence based on custom headers.
+
+## Active health checks
+
+Proactively monitor backend availability by sending periodic health check requests.
+
+### HTTP/HTTPS health checks
+
+```json
+{
+  "healthCheckEnabled": true,
+  "healthCheckType": "http",
+  "healthCheckPath": "/health",
+  "healthCheckPort": 8080,
+  "healthCheckIntervalMs": 5000,
+  "healthCheckTimeoutMs": 2000,
+  "healthCheckStatus": 200
+}
+```
+
+**Configuration:**
+- `healthCheckType` - Protocol: `auto`, `http`, `https`, or `tcp`
+- `healthCheckPath` - Endpoint to check (HTTP/HTTPS only)
+- `healthCheckPort` - Override port for health checks (optional)
+- `healthCheckIntervalMs` - Time between checks (default: 5000ms)
+- `healthCheckTimeoutMs` - Request timeout (default: 2000ms)
+- `healthCheckStatus` - Expected HTTP status code (default: 200)
+
+### TCP health checks
+
+For non-HTTP backends, use TCP connection checks:
+
+```json
+{
+  "healthCheckEnabled": true,
+  "healthCheckType": "tcp",
+  "healthCheckPort": 3306,
+  "healthCheckIntervalMs": 10000,
+  "healthCheckTimeoutMs": 3000
+}
+```
+
+### Auto-detection
+
+Set `healthCheckType: "auto"` to automatically detect the protocol from target addresses:
+
+```json
+{
+  "healthCheckEnabled": true,
+  "healthCheckType": "auto",
+  "healthCheckPath": "/health"
+}
+```
+
+Targets ending with `:443` use HTTPS, others use HTTP.
+
+## Passive failure detection
+
+Automatically detect and isolate unhealthy backends based on request failures.
+
+```json
+{
+  "maxFails": 3,
+  "failDurationMs": 10000,
+  "unhealthyLatencyMs": 5000
+}
+```
+
+**Configuration:**
+- `maxFails` - Number of failures before marking unhealthy (default: 3)
+- `failDurationMs` - Time window for counting failures (default: 10000ms)
+- `unhealthyLatencyMs` - Mark unhealthy if response time exceeds this (optional)
+
+**Example:** With `maxFails: 3` and `failDurationMs: 10000`, a target is marked unhealthy if it fails 3 requests within 10 seconds.
+
+## Retry configuration
+
+Control how failed requests are retried across targets.
+
+```json
+{
+  "retryAttempts": 3,
+  "retryDurationMs": 5000,
+  "retryIntervalMs": 250
+}
+```
+
+**Configuration:**
+- `retryAttempts` - Maximum retry attempts (0-10, default: 3)
+- `retryDurationMs` - Maximum time to spend retrying (default: 5000ms)
+- `retryIntervalMs` - Wait time between retries (default: 250ms)
+
+**Example:** With `retryAttempts: 3` and `retryIntervalMs: 250`, a failed request is retried up to 3 times with 250ms between attempts.
+
+## Session affinity
+
+Maintain sticky sessions to ensure requests from the same client reach the same backend.
+
+### Cookie-based affinity
+
+```json
+{
+  "affinityType": "cookie",
+  "affinityKey": "lb_session",
+  "affinityTtlSeconds": 3600
+}
+```
+
+The system sets a cookie with the specified name to track which backend handles the session.
+
+### Header-based affinity
+
+```json
+{
+  "affinityType": "header",
+  "affinityKey": "X-Session-ID"
+}
+```
+
+Routes requests with the same header value to the same backend.
+
+### Client IP affinity
+
+```json
+{
+  "affinityType": "client_ip"
+}
+```
+
+Routes requests from the same client IP to the same backend.
+
+### Auto affinity
+
+```json
+{
+  "affinityType": "auto"
+}
+```
+
+Automatically determines affinity based on the load balancing policy.
+
+## Service default upstreams
+
+Services can define a default upstream that routes inherit, reducing configuration duplication.
+
+### Setting a service default
+
+Configure a default upstream for a service:
+
+```bash
+PATCH /v1/company/services/:serviceId
+Content-Type: application/json
+
+{
+  "defaultUpstreamType": "upstream",
+  "defaultUpstreamConfig": {
+    "upstreamId": "upstream-id-here"
+  }
+}
+```
+
+Or use an inline URL:
+
+```json
+{
+  "defaultUpstreamType": "inline",
+  "defaultUpstreamConfig": {
+    "url": "backend.example.com:8080",
+    "scheme": "http"
+  }
+}
+```
+
+### Route inheritance patterns
+
+Routes can reference upstreams in three ways:
+
+#### 1. Inline URL (simple backends)
+
+Direct URL entry for simple, one-off backends:
+
+```json
+{
+  "handlerType": "reverse_proxy",
+  "handlerConfig": {
+    "upstream": {
+      "type": "inline",
+      "url": "api.example.com:8080",
+      "scheme": "http"
+    }
+  }
+}
+```
+
+#### 2. Upstream reference (load balanced)
+
+Reference a pre-configured upstream with load balancing:
+
+```json
+{
+  "handlerType": "reverse_proxy",
+  "handlerConfig": {
+    "upstream": {
+      "type": "upstream",
+      "upstreamId": "upstream-id-here"
+    }
+  }
+}
+```
+
+#### 3. Inherit from service (default)
+
+Use the service's default upstream configuration:
+
+```json
+{
+  "handlerType": "reverse_proxy",
+  "handlerConfig": {
+    "upstream": {
+      "type": "inherit"
+    }
+  }
+}
+```
+
+This route automatically uses the service's `defaultUpstreamConfig`.
+
+## Upstream tab in service detail
+
+The service detail page includes a dedicated **Upstream** tab for configuring the service default upstream.
+
+### Configuring service defaults
+
+1. Navigate to the service detail page
+2. Click the **Upstream** tab
+3. Choose one of three options:
+   - **No Default** - Each route must specify its own upstream
+   - **Direct URL** - Enter a backend URL directly
+   - **Use Upstream** - Select a pre-configured upstream
+4. Click **Save Changes**
+
+Routes can then use `"type": "inherit"` to automatically use this configuration.
+
+## Migration from legacy format
+
+The system supports both legacy and new upstream formats during migration.
+
+### Legacy format (deprecated)
+
+Old routes used an array of upstreams with per-route load balancing:
+
+```json
+{
+  "handlerConfig": {
+    "upstreams": [
+      { "upstreamId": "upstream-1", "scheme": "http", "weight": 1 }
+    ],
+    "lbPolicy": "round_robin"
+  }
+}
+```
+
+### New format (recommended)
+
+New routes use a single upstream reference:
+
+```json
+{
+  "handlerConfig": {
+    "upstream": {
+      "type": "upstream",
+      "upstreamId": "upstream-1"
+    }
+  }
+}
+```
+
+Load balancing is now configured at the upstream level, not per-route.
+
+### Migration script
+
+Use the provided migration script to convert legacy routes:
+
+```bash
+npx tsx scripts/migrate-routes-to-inline-upstream.ts --dry-run
+```
+
+Remove `--dry-run` to apply changes:
+
+```bash
+npx tsx scripts/migrate-routes-to-inline-upstream.ts
+```
+
+The script:
+- Converts single-upstream routes to inline format
+- Skips routes with multiple upstreams (manual migration required)
+- Preserves scheme and other configuration
+- Reports what would change before applying
+
+### Backward compatibility
+
+The system maintains backward compatibility:
+- Legacy routes continue to work
+- New routes should use the new format
+- Editing a legacy route converts it to the new format
+
+## Cascading deployments
+
+Upstream changes automatically cascade to affected services:
+
+### Automatic deployment
+
+When you update an upstream, all services using it are automatically deployed to the test domain:
+
+```bash
+PATCH /v1/company/upstreams/:id
+Content-Type: application/json
+
+{
+  "lbPolicy": "least_conn"
+}
+```
+
+Response includes cascading information:
+
+```json
+{
+  "success": true,
+  "data": {
+    "upstream": { ... },
+    "cascading": {
+      "servicesAffected": 3,
+      "deployments": [
+        { "serviceId": "...", "success": true },
+        { "serviceId": "...", "success": true },
+        { "serviceId": "...", "success": true }
+      ]
+    }
+  }
+}
+```
+
+### Target changes trigger cascading
+
+All target operations trigger automatic deployment:
+- Adding targets
+- Updating targets (address, weight, status)
+- Removing targets
+- Reordering targets
+
+This ensures services always use the latest upstream configuration.
+
+## Best practices
+
+### Health check configuration
+
+- Set `healthCheckIntervalMs` based on backend capacity (5-30 seconds typical)
+- Use shorter intervals for critical services
+- Set `healthCheckTimeoutMs` lower than `healthCheckIntervalMs`
+- Use TCP checks for non-HTTP backends
+
+### Load balancing selection
+
+- Use `round_robin` for most cases (simple and effective)
+- Use `least_conn` when request processing time varies
+- Use `ip_hash` or cookie affinity for session persistence
+- Use `first` for primary/backup failover scenarios
+
+### Retry configuration
+
+- Set `retryAttempts` to 2-3 for most cases
+- Lower `retryIntervalMs` for time-sensitive requests
+- Set `retryDurationMs` based on acceptable latency
+
+### Target management
+
+- Keep at least 2 active targets for high availability
+- Use weights to handle backends with different capacities
+- Disable targets instead of deleting them for temporary maintenance
+- Monitor target health in the dashboard
+
+### Service defaults
+
+- Set service defaults when most routes use the same backend
+- Use inline URLs for simple, single-backend services
+- Use upstream references for load-balanced backends
+- Override defaults on specific routes when needed
+
+## Example configurations
+
+### Simple HTTP backend
+
+```json
+{
+  "name": "API Backend",
+  "targets": [
+    { "address": "api.example.com:8080", "weight": 1 }
+  ],
+  "lbPolicy": "round_robin",
+  "healthCheckEnabled": true,
+  "healthCheckPath": "/health",
+  "healthCheckIntervalMs": 10000
+}
+```
+
+### Load-balanced pool with health checks
+
+```json
+{
+  "name": "Web Servers",
+  "targets": [
+    { "address": "web1.example.com:80", "weight": 1 },
+    { "address": "web2.example.com:80", "weight": 1 },
+    { "address": "web3.example.com:80", "weight": 2 }
+  ],
+  "lbPolicy": "least_conn",
+  "healthCheckEnabled": true,
+  "healthCheckType": "http",
+  "healthCheckPath": "/health",
+  "healthCheckIntervalMs": 5000,
+  "healthCheckTimeoutMs": 2000,
+  "maxFails": 3,
+  "failDurationMs": 10000,
+  "retryAttempts": 3,
+  "retryDurationMs": 5000
+}
+```
+
+### Session-aware backend
+
+```json
+{
+  "name": "App Servers",
+  "targets": [
+    { "address": "app1.example.com:8080", "weight": 1 },
+    { "address": "app2.example.com:8080", "weight": 1 }
+  ],
+  "lbPolicy": "cookie",
+  "affinityType": "cookie",
+  "affinityKey": "session_id",
+  "affinityTtlSeconds": 3600,
+  "healthCheckEnabled": true,
+  "healthCheckPath": "/health"
+}
+```
+
+### Database backend with TCP checks
+
+```json
+{
+  "name": "PostgreSQL",
+  "targets": [
+    { "address": "db1.example.com:5432", "weight": 1 },
+    { "address": "db2.example.com:5432", "weight": 1 }
+  ],
+  "lbPolicy": "first",
+  "healthCheckEnabled": true,
+  "healthCheckType": "tcp",
+  "healthCheckPort": 5432,
+  "healthCheckIntervalMs": 10000,
+  "maxFails": 2,
+  "failDurationMs": 30000
+}
+```
