@@ -1,0 +1,247 @@
+---
+title: Quickstart
+description: Get started with CDN Manager in minutes
+---
+
+# Quickstart
+
+This guide will walk you through setting up your first CDN service with CDN Manager.
+
+## Prerequisites
+
+Before you begin, ensure you have:
+
+- Docker and Docker Compose installed
+- Node.js 20+ (for local development)
+- PostgreSQL 15+ and Redis 7+ (or use Docker Compose)
+- A server with SSH access for Caddy installation
+
+## Installation
+
+### Using Docker Compose
+
+Clone the repository and start the services:
+
+```bash
+git clone https://github.com/commKnightWeb/cdn_manager.git
+cd cdn_manager
+docker-compose up
+```
+
+This starts:
+- Backend API on `localhost:3000`
+- Frontend on `localhost:5173`
+- PostgreSQL on `localhost:5432`
+- Redis on `localhost:6379`
+
+### Local development
+
+For development with hot reload:
+
+```bash
+# Backend
+cd backend
+npm install
+npm run db:migrate
+npm run db:seed
+npm run dev
+
+# Worker (in another terminal)
+npm run worker:dev
+
+# Frontend (in another terminal)
+cd frontend
+npm install
+npm run dev
+```
+
+## Initial setup
+
+### 1. Create a super admin
+
+The seed script creates a default super admin:
+
+- Email: `admin@example.com`
+- Password: `password123`
+
+Login at `http://localhost:5173`
+
+### 2. Create a tenant
+
+As super admin, create your first tenant:
+
+1. Navigate to **Admin** → **Tenants**
+2. Click **Create Tenant**
+3. Fill in the details:
+   - Name: `My CDN Company`
+   - Slug: `my-cdn`
+   - Test domain base: `test.mycdn.io` (configure DNS to point to your servers)
+4. Click **Create**
+
+### 3. Create tenant settings
+
+Configure ACME email for SSL certificates:
+
+1. Navigate to **Tenant Settings**
+2. Set **ACME Email**: `admin@mycdn.io`
+3. Click **Save**
+
+### 4. Create a server pool
+
+Create a test pool for pre-production:
+
+1. Navigate to **Server Pools**
+2. Click **Create Pool**
+3. Fill in:
+   - Name: `Test Pool`
+   - Slug: `test`
+   - Is test pool: ✓
+4. Click **Create**
+
+Repeat for production pool with **Is test pool** unchecked.
+
+### 5. Install Caddy server
+
+Add a Caddy server to your pool:
+
+1. Navigate to **Servers**
+2. Click **Add Server**
+3. Fill in server details:
+   - Name: `Caddy Test 1`
+   - IP address: `192.168.1.100`
+   - Admin port: `2019`
+   - Server pool: `Test Pool`
+4. Click **Next**
+
+5. Configure SSH:
+   - SSH port: `22`
+   - SSH user: `root`
+   - Generate SSH keypair
+   - Copy the public key to your server's `~/.ssh/authorized_keys`
+6. Click **Install**
+
+Watch the real-time installation progress via WebSocket.
+
+### 6. Create a company
+
+Companies are your customers who manage CDN services:
+
+1. Navigate to **Companies**
+2. Click **Create Company**
+3. Fill in:
+   - Name: `Acme Corp`
+   - Slug: `acme`
+   - Test pool: `Test Pool`
+   - Production pool: `Production Pool`
+4. Click **Create**
+
+### 7. Create a company user
+
+Create a login for the company admin:
+
+1. Navigate to **Companies** → **Acme Corp** → **Users**
+2. Click **Add User**
+3. Fill in:
+   - Email: `admin@acme.com`
+   - Password: `password123`
+   - Name: `Acme Admin`
+4. Click **Create**
+
+## Create your first service
+
+Login as the company admin (`admin@acme.com`) and create a CDN service:
+
+### 1. Create an upstream
+
+Define your backend server:
+
+1. Navigate to **Upstreams**
+2. Click **Create Upstream**
+3. Fill in:
+   - Name: `My Backend`
+   - Add target: `backend.acme.com:8080`
+4. Click **Create**
+
+### 2. Create a service
+
+1. Navigate to **Services**
+2. Click **Create Service**
+3. Fill in:
+   - Name: `My Website`
+   - Production domains: `www.acme.com`
+   - SSL mode: `auto` (automatic ACME)
+4. Click **Create**
+
+A test domain is automatically generated (e.g., `x7k9m2ab.test.mycdn.io`).
+
+### 3. Add a route
+
+Configure how traffic is handled:
+
+1. Click on your service → **Routes** tab
+2. Click **Add Route**
+3. Fill in:
+   - Path matcher: `/*` (all paths)
+   - Handler type: `reverse_proxy`
+   - Upstream: `My Backend`
+4. Click **Save**
+
+### 4. Deploy to test
+
+1. Click **Deploy** → **Deploy to Test**
+2. Review the changes
+3. Click **Confirm**
+
+Your service is now live on the test domain!
+
+### 5. Test your service
+
+```bash
+curl https://x7k9m2ab.test.mycdn.io
+```
+
+### 6. Promote to production
+
+Once tested, promote to production:
+
+1. Click **Deploy** → **Promote to Production**
+2. Review the changes
+3. Click **Confirm**
+
+Your service is now live on `www.acme.com`!
+
+## Next steps
+
+Now that you have a working CDN service, explore these features:
+
+- [Configure SSL certificates](/cdn_manager/ssl-configuration)
+- [Set up authentication](/cdn_manager/authentication)
+- [Configure load balancing](/cdn_manager/load-balancing)
+- [Monitor bandwidth usage](/cdn_manager/monitoring)
+- [Set up alerts](/cdn_manager/alerts)
+
+## Common issues
+
+### Caddy installation fails
+
+Check that:
+- SSH key is correctly added to `~/.ssh/authorized_keys`
+- Port 22 is accessible
+- User has sudo privileges
+- Docker is installed on the target server
+
+### Certificate issuance fails
+
+Ensure:
+- DNS points to your Caddy server IP
+- Port 80 and 443 are open
+- ACME email is configured in tenant settings
+- Domain is not rate-limited by Let's Encrypt
+
+### Service not accessible
+
+Verify:
+- Service is deployed (check deployment status)
+- DNS resolves to Caddy server
+- Upstream backend is reachable from Caddy server
+- Firewall allows traffic on ports 80/443

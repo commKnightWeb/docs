@@ -1,0 +1,534 @@
+---
+title: Deployment
+description: Deploy CDN Manager to production
+---
+
+# Deployment
+
+This guide covers deploying CDN Manager to production environments.
+
+## Prerequisites
+
+Before deploying, ensure you have:
+
+- Docker and Docker Compose
+- PostgreSQL 15+ database
+- Redis 7+ instance
+- Domain with DNS access
+- SSL certificate (or use Let's Encrypt)
+- SMTP server for alerts (optional)
+
+## Environment variables
+
+Create a `.env` file with the following variables:
+
+### Required
+
+```bash
+# Database
+DATABASE_URL="postgresql://user:password@localhost:5432/cdn_manager"
+
+# Redis
+REDIS_URL="redis://localhost:6379"
+
+# JWT secrets (generate with: openssl rand -base64 32)
+JWT_ACCESS_SECRET="your-access-secret-here"
+JWT_REFRESH_SECRET="your-refresh-secret-here"
+
+# Encryption key for SSH keys (32+ characters)
+ENCRYPTION_KEY="your-encryption-key-here"
+
+# API URL
+API_URL="https://api.yourcdn.com"
+FRONTEND_URL="https://app.yourcdn.com"
+```
+
+### Optional
+
+```bash
+# SMTP for alerts
+SMTP_HOST="smtp.gmail.com"
+SMTP_PORT="587"
+SMTP_USER="alerts@yourcdn.com"
+SMTP_PASSWORD="your-smtp-password"
+SMTP_FROM="CDN Manager <alerts@yourcdn.com>"
+
+# Caddy on-demand TLS
+CADDY_ON_DEMAND_PERMISSION_ENDPOINT="https://api.yourcdn.com/caddy/verify-domain"
+
+# Logging
+LOG_LEVEL="info"
+NODE_ENV="production"
+```
+
+## Docker deployment
+
+### Using Docker Compose
+
+Create a `docker-compose.yml`:
+
+```yaml
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_DB: cdn_manager
+      POSTGRES_USER: cdn_user
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+
+  redis:
+    image: redis:7-alpine
+    volumes:
+      - redis_data:/data
+    ports:
+      - "6379:6379"
+
+  api:
+    image: cdn-manager-api:latest
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    environment:
+      DATABASE_URL: postgresql://cdn_user:${DB_PASSWORD}@postgres:5432/cdn_manager
+      REDIS_URL: redis://redis:6379
+      JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET}
+      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET}
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY}
+      NODE_ENV: production
+    ports:
+      - "3000:3000"
+    depends_on:
+      - postgres
+      - redis
+
+  worker:
+    image: cdn-manager-worker:latest
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.worker
+    environment:
+      DATABASE_URL: postgresql://cdn_user:${DB_PASSWORD}@postgres:5432/cdn_manager
+      REDIS_URL: redis://redis:6379
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY}
+      NODE_ENV: production
+    depends_on:
+      - postgres
+      - redis
+
+  frontend:
+    image: cdn-manager-frontend:latest
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    environment:
+      VITE_API_URL: https://api.yourcdn.com
+    ports:
+      - "80:80"
+    depends_on:
+      - api
+
+volumes:
+  postgres_data:
+  redis_data:
+```
+
+Start the services:
+
+```bash
+docker-compose up -d
+```
+
+### Database migrations
+
+Run migrations after first deployment:
+
+```bash
+docker-compose exec api npm run db:migrate
+docker-compose exec api npm run db:seed
+```
+
+## Easypanel deployment
+
+CDN Manager can be deployed to Easypanel with automatic GitHub integration.
+
+### 1. Create services
+
+Create three services in Easypanel:
+
+- **cdn-manager-api** - Backend API
+- **cdn-manager-worker** - Background worker
+- **cdn-manager-frontend** - React frontend
+
+### 2. Configure API service
+
+**Source**: GitHub repository (main branch)
+
+**Build**:
+```bash
+cd backend
+npm install
+npm run build
+```
+
+**Start command**:
+```bash
+npm start
+```
+
+**Environment variables**:
+- Add all required variables from `.env`
+
+**Domains**:
+- Add `api.yourcdn.com`
+
+### 3. Configure worker service
+
+**Source**: Same GitHub repository
+
+**Build**:
+```bash
+cd backend
+npm install
+npm run build
+```
+
+**Start command**:
+```bash
+npm run worker
+```
+
+**Environment variables**:
+- Same as API service
+
+### 4. Configure frontend service
+
+**Source**: Same GitHub repository
+
+**Build**:
+```bash
+cd frontend
+npm install
+npm run build
+```
+
+**Start command**:
+```bash
+npx serve -s dist -l 3000
+```
+
+**Environment variables**:
+- `VITE_API_URL=https://api.yourcdn.com`
+
+**Domains**:
+- Add `app.yourcdn.com`
+
+### 5. Add PostgreSQL service
+
+Create a PostgreSQL service in Easypanel:
+
+- **Version**: 15
+- **Database**: cdn_manager
+- **User**: cdn_user
+- **Password**: Generate secure password
+
+### 6. Add Redis service
+
+Create a Redis service in Easypanel:
+
+- **Version**: 7
+- **Persistence**: Enabled
+
+## Reverse proxy setup
+
+### Nginx
+
+```nginx
+# API
+server {
+    listen 443 ssl http2;
+    server_name api.yourcdn.com;
+
+    ssl_certificate /etc/ssl/certs/api.yourcdn.com.crt;
+    ssl_certificate_key /etc/ssl/private/api.yourcdn.com.key;
+
+    location / {
+        proxy_pass http://localhost:3000;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection 'upgrade';
+        proxy_set_header Host $host;
+        proxy_cache_bypass $http_upgrade;
+    }
+
+    # WebSocket support
+    location /ws/ {
+        proxy_pass http://localhost:3000;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "Upgrade";
+        proxy_set_header Host $host;
+    }
+}
+
+# Frontend
+server {
+    listen 443 ssl http2;
+    server_name app.yourcdn.com;
+
+    ssl_certificate /etc/ssl/certs/app.yourcdn.com.crt;
+    ssl_certificate_key /etc/ssl/private/app.yourcdn.com.key;
+
+    location / {
+        proxy_pass http://localhost:5173;
+        proxy_set_header Host $host;
+    }
+}
+```
+
+### Caddy
+
+```caddyfile
+api.yourcdn.com {
+    reverse_proxy localhost:3000
+}
+
+app.yourcdn.com {
+    reverse_proxy localhost:5173
+}
+```
+
+## Database backups
+
+### Automated backups
+
+Create a backup script:
+
+```bash
+#!/bin/bash
+BACKUP_DIR="/backups/cdn_manager"
+DATE=$(date +%Y%m%d_%H%M%S)
+FILENAME="cdn_manager_$DATE.sql.gz"
+
+# Create backup
+docker-compose exec -T postgres pg_dump -U cdn_user cdn_manager | gzip > "$BACKUP_DIR/$FILENAME"
+
+# Keep only last 30 days
+find "$BACKUP_DIR" -name "*.sql.gz" -mtime +30 -delete
+```
+
+Add to crontab:
+
+```bash
+0 2 * * * /path/to/backup.sh
+```
+
+### Restore from backup
+
+```bash
+gunzip < backup.sql.gz | docker-compose exec -T postgres psql -U cdn_user cdn_manager
+```
+
+## Monitoring
+
+### Health checks
+
+Monitor these endpoints:
+
+```bash
+# Basic health
+curl https://api.yourcdn.com/health
+
+# Detailed health
+curl https://api.yourcdn.com/health/detailed
+```
+
+### Logs
+
+View logs:
+
+```bash
+# API logs
+docker-compose logs -f api
+
+# Worker logs
+docker-compose logs -f worker
+
+# All logs
+docker-compose logs -f
+```
+
+### Metrics
+
+Background workers collect metrics:
+
+- Server health (CPU, memory)
+- Bandwidth usage
+- Request counts
+- Certificate expiry
+- Domain health
+
+Access metrics via the admin dashboard.
+
+## Scaling
+
+### Horizontal scaling
+
+Scale API and worker services:
+
+```bash
+# Scale API to 3 instances
+docker-compose up -d --scale api=3
+
+# Scale worker to 5 instances
+docker-compose up -d --scale worker=5
+```
+
+### Database scaling
+
+For high traffic:
+
+1. Enable PostgreSQL read replicas
+2. Configure connection pooling (PgBouncer)
+3. Add database indexes for slow queries
+
+### Redis scaling
+
+For high throughput:
+
+1. Enable Redis cluster mode
+2. Add Redis Sentinel for high availability
+3. Configure Redis persistence (AOF)
+
+## Security
+
+### SSL/TLS
+
+Use Let's Encrypt for free SSL certificates:
+
+```bash
+certbot certonly --standalone -d api.yourcdn.com -d app.yourcdn.com
+```
+
+### Firewall
+
+Allow only necessary ports:
+
+```bash
+# API
+ufw allow 443/tcp
+
+# PostgreSQL (internal only)
+ufw allow from 10.0.0.0/8 to any port 5432
+
+# Redis (internal only)
+ufw allow from 10.0.0.0/8 to any port 6379
+```
+
+### Secrets management
+
+Use environment variables or secret managers:
+
+- **Docker secrets** - For Docker Swarm
+- **Kubernetes secrets** - For K8s deployments
+- **HashiCorp Vault** - For enterprise
+- **AWS Secrets Manager** - For AWS deployments
+
+## Troubleshooting
+
+### API won't start
+
+Check logs:
+
+```bash
+docker-compose logs api
+```
+
+Common issues:
+- Database connection failed - Check `DATABASE_URL`
+- Redis connection failed - Check `REDIS_URL`
+- Port already in use - Change port in `docker-compose.yml`
+
+### Worker not processing jobs
+
+Check worker logs:
+
+```bash
+docker-compose logs worker
+```
+
+Verify Redis connection:
+
+```bash
+docker-compose exec redis redis-cli ping
+```
+
+### Database migrations fail
+
+Reset and re-run:
+
+```bash
+docker-compose exec api npm run db:reset
+docker-compose exec api npm run db:migrate
+docker-compose exec api npm run db:seed
+```
+
+### High memory usage
+
+Increase container limits:
+
+```yaml
+services:
+  api:
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+```
+
+## Updates
+
+### Update to latest version
+
+```bash
+# Pull latest code
+git pull origin main
+
+# Rebuild containers
+docker-compose build
+
+# Run migrations
+docker-compose exec api npm run db:migrate
+
+# Restart services
+docker-compose up -d
+```
+
+### Zero-downtime updates
+
+Use blue-green deployment:
+
+1. Deploy new version to separate stack
+2. Run health checks
+3. Switch traffic to new stack
+4. Keep old stack for rollback
+
+## Production checklist
+
+Before going live:
+
+- [ ] Set strong passwords for all services
+- [ ] Enable SSL/TLS for all endpoints
+- [ ] Configure automated backups
+- [ ] Set up monitoring and alerts
+- [ ] Configure log rotation
+- [ ] Enable firewall rules
+- [ ] Test disaster recovery
+- [ ] Document runbooks
+- [ ] Set up status page
+- [ ] Configure SMTP for alerts
